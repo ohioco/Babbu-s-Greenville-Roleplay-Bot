@@ -25,8 +25,7 @@ const { getLink } = require("../sessionStore");
 const support = require("../commands/support");
 
 const EA_ROLES = [
-  "1510346654241394848",
-  // Add more EA role IDs here
+  "1455371123721109645", // EA role
 ];
 
 module.exports = {
