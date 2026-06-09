@@ -77,7 +77,7 @@ Ensure that you follow **[Discord TOS](https://discord.com/terms)** at all times
         .setPlaceholder("Babbu's Greenville Roleplay - Links")
         .addOptions([
           {
-            label:       "BBGVRP TikTok Page",
+            label:       "Babbu's Greenville Roleplay TikTok Page",
             description: "This is the official TikTok Page",
             value:       "tiktok",
             emoji:       "📱",
