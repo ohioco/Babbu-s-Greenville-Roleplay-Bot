@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 
-const STAFF_ROLE = "1510346654241394848";
+const STAFF_ROLE = "1455324349526442099";
 
 module.exports = {
   data: new SlashCommandBuilder()

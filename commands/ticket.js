@@ -3,7 +3,7 @@ const db = require("../db");
 
 // Law enforcement role IDs — edit these to match your server
 const LAW_ENFORCEMENT_ROLES = [
-  "1513443901577363589",  // public services role ID
+  "1501438944217268380", // Public Services role
   // Add more as needed
 ];
 

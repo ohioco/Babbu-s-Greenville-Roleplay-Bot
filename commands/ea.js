@@ -7,12 +7,11 @@ const {
 } = require("discord.js");
 const { saveLink } = require("../sessionStore");
 
-const STAFF_ROLE = "1510346654241394848";
+const STAFF_ROLE = "1455324349526442099";
 const BABY_BLUE  = 0x89CFF0;
 
 const EA_ROLES = [
-  "1510346654241394848",
-  // Add more EA role IDs here
+  "1455371123721109645", // EA role
 ];
 
 module.exports = {

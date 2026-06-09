@@ -8,9 +8,10 @@
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPPORT_CONFIG = {
-  TICKET_CATEGORY_ID: "YOUR_TICKET_CATEGORY_ID",
-  STAFF_ROLE_ID:      "YOUR_STAFF_ROLE_ID",
-  LOG_CHANNEL_ID:     "YOUR_LOG_CHANNEL_ID",
+  TICKET_CATEGORY_ID:  "YOUR_TICKET_CATEGORY_ID",
+  STAFF_ROLE_ID:       "1455324349526442099",
+  OWNERSHIP_ROLE_ID:   "1455323928602873919",
+  LOG_CHANNEL_ID:      "YOUR_LOG_CHANNEL_ID",
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -39,9 +40,11 @@ const activeTickets = new Map();
 const cfg = SUPPORT_CONFIG;
 
 function hasStaffRole(member) {
-  return cfg.STAFF_ROLE_ID !== "YOUR_STAFF_ROLE_ID"
-    ? member.roles.cache.has(cfg.STAFF_ROLE_ID)
-    : member.permissions.has(PermissionFlagsBits.ManageChannels);
+  return member.roles.cache.has(cfg.STAFF_ROLE_ID);
+}
+
+function hasOwnershipRole(member) {
+  return member.roles.cache.has(cfg.OWNERSHIP_ROLE_ID);
 }
 
 function ownerIdFromTopic(topic) {
@@ -267,8 +270,8 @@ module.exports = {
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     if (sub === "panel") {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: "❌ You need **Manage Server** permission.", flags: MessageFlags.Ephemeral });
+      if (!hasOwnershipRole(interaction.member)) {
+        return interaction.reply({ content: "❌ Only Ownership can post the support panel.", flags: MessageFlags.Ephemeral });
       }
       await postPanel(interaction.channel);
       return interaction.reply({ content: "✅ Support panel posted!", flags: MessageFlags.Ephemeral });

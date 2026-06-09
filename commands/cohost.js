@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 
-const STAFF_ROLE = "1510346654241394848";
+const STAFF_ROLE = "1455324349526442099";
 const BABY_BLUE  = 0x89CFF0;
 
 module.exports = {

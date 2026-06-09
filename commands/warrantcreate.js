@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../db");
 
 const LAW_ENFORCEMENT_ROLES = [
-  "1513443901577363589",
+  "1501438944217268380",
 ];
 
 module.exports = {
