@@ -5,15 +5,21 @@
 //   swallowed silently instead of crashing with DiscordAPIError[10003].
 // FIX: All reply() calls that follow async work use deferReply/editReply so
 //   the 3-second window can't expire on Termux hardware.
+// FIX: activeTickets now tracks creation time and auto-cleans stale entries
+//   after 24 hours to prevent unbounded memory growth.
 
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────────────[...]
 const SUPPORT_CONFIG = {
-  TICKET_CATEGORY_ID:  "YOUR_TICKET_CATEGORY_ID",
-  STAFF_ROLE_ID:       "1455324349526442099",
-  OWNERSHIP_ROLE_ID:   "1455323928602873919",
-  LOG_CHANNEL_ID:      "YOUR_LOG_CHANNEL_ID",
+  TICKET_CATEGORY_ID: "YOUR_TICKET_CATEGORY_ID",
+  STAFF_ROLE_ID: "1455324349526442099",
+  OWNERSHIP_ROLE_ID: "1455323928602873919",
+  LOG_CHANNEL_ID: "YOUR_LOG_CHANNEL_ID",
 };
-// ─────────────────────────────────────────────────────────────────────────────
+
+// Ticket TTL and cleanup settings
+const TICKET_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CLEANUP_INTERVAL = 60 * 60 * 1000; // Run cleanup every hour
+// ────────────────────────────────────────────────────────────────[...]
 
 const {
   SlashCommandBuilder,
@@ -28,15 +34,36 @@ const {
 } = require("discord.js");
 
 const TICKET_TYPES = {
-  general:  { label: "General Assistance",  color: 0x5865F2, prefix: "general",  pingStaff: false, description: "Use this ticket to ask questions about rules or sessions. You may also use this ticket to Request Partnerships, Claim Perks, or for Application Requests. This is not to be used to report someone."   },
-  civilian: { label: "Civilian Report",     color: 0xED4245, prefix: "report",   pingStaff: true,  description: "Use this to report a Civilian who might be breaking the rules. Make sure to gather proof as it is necessary so that the High Command Team can take action."                                             },
-  staff:    { label: "Staff Report",        color: 0xFEE75C, prefix: "staff",    pingStaff: true,  description: "Use this to report a Staff Member who might be breaking the rules. Make sure to gather proof as it is necessary so that the High Command Team can take action."                                         },
+  general: {
+    label: "General Assistance",
+    color: 0x5865f2,
+    prefix: "general",
+    pingStaff: false,
+    description:
+      "Use this ticket to ask questions about rules or sessions. You may also use this ticket to Request Partnerships, Claim Perks, or for Application Requests. This is not to be used to report someone, as there are other tickets to use that for.",
+  },
+  civilian: {
+    label: "Civilian Report",
+    color: 0xed4245,
+    prefix: "report",
+    pingStaff: true,
+    description:
+      "Use this to report a Civilian who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, depending on the severity.",
+  },
+  staff: {
+    label: "Staff Report",
+    color: 0xfee75c,
+    prefix: "staff",
+    pingStaff: true,
+    description:
+      "Use this to report a Staff Member who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, depending on the severity.",
+  },
 };
 
-// userId -> channelId  (in-memory; resets on bot restart — acceptable for tickets)
+// userId -> { channelId, createdAt }  (in-memory; resets on bot restart)
 const activeTickets = new Map();
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// ── HELPERS ───────────────────────────────────────────────────────────[...]
 const cfg = SUPPORT_CONFIG;
 
 function hasStaffRole(member) {
@@ -56,18 +83,20 @@ async function logAction(guild, { action, user, detail, color }) {
   if (cfg.LOG_CHANNEL_ID === "YOUR_LOG_CHANNEL_ID") return;
   const ch = guild.channels.cache.get(cfg.LOG_CHANNEL_ID);
   if (!ch) return;
-  await ch.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle(`📋 ${action}`)
-        .addFields(
-          { name: "User",   value: `${user.tag} (${user.id})`, inline: true },
-          { name: "Detail", value: detail ?? "—",              inline: true },
-        )
-        .setColor(color)
-        .setTimestamp(),
-    ],
-  }).catch(console.error);
+  await ch
+    .send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`📋 ${action}`)
+          .addFields(
+            { name: "User", value: `${user.tag} (${user.id})`, inline: true },
+            { name: "Detail", value: detail ?? "—", inline: true }
+          )
+          .setColor(color)
+          .setTimestamp(),
+      ],
+    })
+    .catch(console.error);
 }
 
 function ticketButtons(claimed = false, claimerName = "") {
@@ -82,33 +111,63 @@ function ticketButtons(claimed = false, claimerName = "") {
       .setCustomId("support_close")
       .setLabel("Close Ticket")
       .setStyle(ButtonStyle.Danger)
-      .setEmoji("🔒"),
+      .setEmoji("🔒")
   );
 }
 
-// ── POST PANEL ────────────────────────────────────────────────────────────────
+/**
+ * Clean up expired tickets
+ * Removes tickets older than TICKET_TTL
+ */
+function cleanupExpiredTickets() {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [userId, entry] of activeTickets.entries()) {
+    if (now - entry.createdAt > TICKET_TTL) {
+      activeTickets.delete(userId);
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`[support] Cleaned up ${cleaned} expired tickets`);
+  }
+}
+
+/**
+ * Start automatic cleanup interval
+ * Runs every hour to remove stale tickets
+ */
+function startCleanupInterval() {
+  const interval = setInterval(cleanupExpiredTickets, CLEANUP_INTERVAL);
+
+  // Allow process to exit even with this interval running
+  interval.unref();
+
+  console.log("[support] Ticket cleanup interval started (1 hour)");
+  return interval;
+}
+
+// ── POST PANEL ──────────────────────────────────────────────────────────[...]
 async function postPanel(channel) {
   const embed = new EmbedBuilder()
     .setTitle("Welcome to the Babbu's Greenville Roleplay Support Directory!")
     .setDescription(
       "This channel allows you to request assistance, such as General Assistance, a Staff Report, or a Civilian Report. " +
-      "If you are facing any issues within the server, please do not hesitate to make a ticket below!\n\n" +
-
-      "> **General Assistance:**\n" +
-      "> Use this support ticket to ask **questions** about rules or sessions. You may also use this ticket to **Request Partnerships, Claim Perks, or for Application Requests**. " +
-      "This is not to be used to report someone, as there are other tickets to use that for.\n\n" +
-
-      "> **Civilian Report:**\n" +
-      "> Use this to report a **Civilian** who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, " +
-      "depending on the severity. If further support is needed, please request the Staff Member to assist you further.\n\n" +
-
-      "> **Staff Report:**\n" +
-      "> Use this to report a **Staff Member** who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, " +
-      "depending on the severity. If further support is needed, please request the High Command Member to assist you further.\n\n" +
-
-      "-# If you do not respond to your ticket within **24 hours**, it will be automatically closed.",
+        "If you are facing any issues within the server, please do not hesitate to make a ticket below!\n\n" +
+        "> **General Assistance:**\n" +
+        "> Use this support ticket to ask **questions** about rules or sessions. You may also use this ticket to **Request Partnerships, Claim Perks, or for Application Requests**. " +
+        "This is not to be used to report someone, as there are other tickets to use that for.\n\n" +
+        "> **Civilian Report:**\n" +
+        "> Use this to report a **Civilian** who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, " +
+        "depending on the severity. If further support is needed, please request the Staff Member to assist you further.\n\n" +
+        "> **Staff Report:**\n" +
+        "> Use this to report a **Staff Member** who might be breaking the rules. Make sure to gather proof as it is necessary so that the server High Command Team can take action, " +
+        "depending on the severity. If further support is needed, please request the High Command Member to assist you further.\n\n" +
+        "-# If you do not respond to your ticket within **24 hours**, it will be automatically closed."
     )
-    .setColor(0x89CFF0)
+    .setColor(0x89cff0)
     .setFooter({ text: "Babbu's Greenville Roleplay™ | Support" })
     .setTimestamp();
 
@@ -117,29 +176,44 @@ async function postPanel(channel) {
       .setCustomId("support_type_menu")
       .setPlaceholder("Select a support category...")
       .addOptions([
-        { label: "General Assistance",  description: "Questions, partnerships, perks, applications",  value: "general"  },
-        { label: "Civilian Report",     description: "Report a civilian breaking the rules",          value: "civilian" },
-        { label: "Staff Report",        description: "Report a staff member breaking the rules",      value: "staff"    },
-      ]),
+        {
+          label: "General Assistance",
+          description: "Questions, partnerships, perks, applications",
+          value: "general",
+        },
+        {
+          label: "Civilian Report",
+          description: "Report a civilian breaking the rules",
+          value: "civilian",
+        },
+        {
+          label: "Staff Report",
+          description: "Report a staff member breaking the rules",
+          value: "staff",
+        },
+      ])
   );
 
   await channel.send({ embeds: [embed], components: [row] });
 }
 
-// ── CREATE TICKET ─────────────────────────────────────────────────────────────
+// ── CREATE TICKET ─────────────────────────────────────────────────────────[...]
 async function handleSelectMenu(interaction) {
   if (interaction.customId !== "support_type_menu") return false;
 
-  const type       = interaction.values[0];
+  const type = interaction.values[0];
   const ticketType = TICKET_TYPES[type];
   const { guild, user } = interaction;
 
   // Duplicate check
-  const existingId = activeTickets.get(user.id);
-  if (existingId) {
-    const existing = guild.channels.cache.get(existingId);
+  const existingEntry = activeTickets.get(user.id);
+  if (existingEntry) {
+    const existing = guild.channels.cache.get(existingEntry.channelId);
     if (existing) {
-      return interaction.reply({ content: `❌ You already have an open ticket: ${existing}`, flags: MessageFlags.Ephemeral });
+      return interaction.reply({
+        content: `❌ You already have an open ticket: ${existing}`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
     activeTickets.delete(user.id); // stale entry, clean up
   }
@@ -149,31 +223,58 @@ async function handleSelectMenu(interaction) {
   const ticketNumber = Date.now().toString().slice(-5);
 
   const permissionOverwrites = [
-    { id: guild.roles.everyone,        deny:  [PermissionFlagsBits.ViewChannel] },
-    { id: user.id,                     allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] },
-    { id: interaction.client.user.id,  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
+    { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+    {
+      id: user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+      ],
+    },
+    {
+      id: interaction.client.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageChannels,
+      ],
+    },
   ];
 
   if (ticketType.pingStaff && cfg.STAFF_ROLE_ID !== "YOUR_STAFF_ROLE_ID") {
     permissionOverwrites.push({
       id: cfg.STAFF_ROLE_ID,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
     });
   }
 
   const ticketChannel = await guild.channels.create({
-    name:  `${ticketType.prefix}-${user.username}-${ticketNumber}`,
-    type:  ChannelType.GuildText,
-    parent: cfg.TICKET_CATEGORY_ID !== "YOUR_TICKET_CATEGORY_ID" ? cfg.TICKET_CATEGORY_ID : null,
+    name: `${ticketType.prefix}-${user.username}-${ticketNumber}`,
+    type: ChannelType.GuildText,
+    parent:
+      cfg.TICKET_CATEGORY_ID !== "YOUR_TICKET_CATEGORY_ID"
+        ? cfg.TICKET_CATEGORY_ID
+        : null,
     permissionOverwrites,
     topic: `type:${type}|UID:${user.id}|ticket:${ticketNumber}`,
   });
 
-  activeTickets.set(user.id, ticketChannel.id);
+  // Store with creation timestamp for TTL cleanup
+  activeTickets.set(user.id, {
+    channelId: ticketChannel.id,
+    createdAt: Date.now(),
+  });
 
-  const pingContent = ticketType.pingStaff && cfg.STAFF_ROLE_ID !== "YOUR_STAFF_ROLE_ID"
-    ? `<@&${cfg.STAFF_ROLE_ID}> — New **${ticketType.label}** opened by ${user}`
-    : `${user} — your ticket has been created!`;
+  const pingContent =
+    ticketType.pingStaff && cfg.STAFF_ROLE_ID !== "YOUR_STAFF_ROLE_ID"
+      ? `<@&${cfg.STAFF_ROLE_ID}> — New **${ticketType.label}** opened by ${user}`
+      : `${user} — your ticket has been created!`;
 
   await ticketChannel.send({
     content: pingContent,
@@ -182,8 +283,8 @@ async function handleSelectMenu(interaction) {
         .setTitle(ticketType.label)
         .setDescription(
           `Welcome, ${user}!\n\n${ticketType.description}\n\n` +
-          `Please describe your issue and a staff member will be with you shortly.\n\n` +
-          `**Ticket ID:** \`${ticketNumber}\``,
+            `Please describe your issue and a staff member will be with you shortly.\n\n` +
+            `**Ticket ID:** \`${ticketNumber}\``
         )
         .setColor(ticketType.color)
         .setTimestamp()
@@ -192,12 +293,19 @@ async function handleSelectMenu(interaction) {
     components: [ticketButtons()],
   });
 
-  await logAction(guild, { action: "Ticket Opened", user, detail: ticketType.label, color: ticketType.color });
-  await interaction.editReply({ content: `✅ Your ticket has been created: ${ticketChannel}` });
+  await logAction(guild, {
+    action: "Ticket Opened",
+    user,
+    detail: ticketType.label,
+    color: ticketType.color,
+  });
+  await interaction.editReply({
+    content: `✅ Your ticket has been created: ${ticketChannel}`,
+  });
   return true;
 }
 
-// ── BUTTON ROUTER ─────────────────────────────────────────────────────────────
+// ── BUTTON ROUTER ─────────────────────────────────────────────────────────[...]
 async function handleButton(interaction) {
   const { customId } = interaction;
   if (customId === "support_close") return handleClose(interaction);
@@ -205,7 +313,7 @@ async function handleButton(interaction) {
   return false;
 }
 
-// ── CLOSE ─────────────────────────────────────────────────────────────────────
+// ── CLOSE ───────────────────────────────────────────────────────────[...]
 async function handleClose(interaction) {
   const { channel, guild, user } = interaction;
 
@@ -213,13 +321,23 @@ async function handleClose(interaction) {
   const isOwner = ownerId === user.id;
 
   if (!hasStaffRole(interaction.member) && !isOwner) {
-    return interaction.reply({ content: "❌ You don't have permission to close this ticket.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({
+      content: "❌ You don't have permission to close this ticket.",
+      flags: MessageFlags.Ephemeral,
+    });
   }
 
   if (ownerId) activeTickets.delete(ownerId);
 
-  await logAction(guild, { action: "Ticket Closed", user, detail: channel.name, color: 0xED4245 });
-  await interaction.reply({ content: "🔒 Closing this ticket in **5 seconds**..." });
+  await logAction(guild, {
+    action: "Ticket Closed",
+    user,
+    detail: channel.name,
+    color: 0xed4245,
+  });
+  await interaction.reply({
+    content: "🔒 Closing this ticket in **5 seconds**...",
+  });
 
   // FIX [10003]: wrap delete in try/catch — channel may already be gone if two
   // staff members click "Close" at the same time, or the bot briefly lost
@@ -239,42 +357,59 @@ async function handleClose(interaction) {
   return true;
 }
 
-// ── CLAIM ─────────────────────────────────────────────────────────────────────
+// ── CLAIM ───────────────────────────────────────────────────────────[...]
 async function handleClaim(interaction) {
   if (!hasStaffRole(interaction.member)) {
-    return interaction.reply({ content: "❌ Only staff can claim tickets.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({
+      content: "❌ Only staff can claim tickets.",
+      flags: MessageFlags.Ephemeral,
+    });
   }
 
   // interaction.update() is its own acknowledgement — no deferReply needed
-  await interaction.update({ components: [ticketButtons(true, interaction.user.username)] });
+  await interaction.update({
+    components: [ticketButtons(true, interaction.user.username)],
+  });
 
   await interaction.channel.send({
     embeds: [
       new EmbedBuilder()
-        .setDescription(`✅ This ticket has been claimed by ${interaction.user}`)
-        .setColor(0x57F287)
+        .setDescription(
+          `✅ This ticket has been claimed by ${interaction.user}`
+        )
+        .setColor(0x57f287)
         .setTimestamp(),
     ],
   });
   return true;
 }
 
-// ── COMMAND DEFINITION ────────────────────────────────────────────────────────
+// ── COMMAND DEFINITION ───────────────────────────────────────────────────────[...]
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("support")
     .setDescription("Support ticket commands")
-    .addSubcommand(sub => sub.setName("panel").setDescription("Post the support panel (staff only)"))
-    .addSubcommand(sub => sub.setName("close").setDescription("Close the current support ticket")),
+    .addSubcommand((sub) =>
+      sub.setName("panel").setDescription("Post the support panel (staff only)")
+    )
+    .addSubcommand((sub) =>
+      sub.setName("close").setDescription("Close the current support ticket")
+    ),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     if (sub === "panel") {
       if (!hasOwnershipRole(interaction.member)) {
-        return interaction.reply({ content: "❌ Only Ownership can post the support panel.", flags: MessageFlags.Ephemeral });
+        return interaction.reply({
+          content: "❌ Only Ownership can post the support panel.",
+          flags: MessageFlags.Ephemeral,
+        });
       }
       await postPanel(interaction.channel);
-      return interaction.reply({ content: "✅ Support panel posted!", flags: MessageFlags.Ephemeral });
+      return interaction.reply({
+        content: "✅ Support panel posted!",
+        flags: MessageFlags.Ephemeral,
+      });
     }
     if (sub === "close") return handleClose(interaction);
   },
@@ -283,4 +418,10 @@ module.exports = {
   handleSelectMenu,
   handleButton,
   activeTickets,
+
+  // Start cleanup on module load
+  startCleanupInterval: startCleanupInterval,
 };
+
+// Auto-start cleanup when module loads
+startCleanupInterval();
