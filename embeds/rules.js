@@ -32,7 +32,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle("Babbu's Greenville Roleplay™ | Server Regulations")
       .setColor(BABY_BLUE)
-      .setImage("https://i.ibb.co/MxGZYZ0b/Untitled137-20260602204131.png")
+      .setImage("")
       .setDescription(
 `Welcome to **Babbu's Greenville Roleplay**! We are a third-party Greenville Roleplay Server, which is civilian-centred to ensure a smooth and professional civilian experience within our server. Our commitment is to provide members with an immersive, respectful, and enjoyable roleplay environment where creativity thrives and community values are upheld.
 
