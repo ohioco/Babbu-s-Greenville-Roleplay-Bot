@@ -67,7 +67,7 @@ module.exports = {
       return;
     }
 
-    // ── BUTTONS ─────────────────────────────────────────────────────────────
+    // ── BUTTONS ──────────────────────────────────────────────────────────[...]
     if (!interaction.isButton()) return;
 
     const { customId } = interaction;
@@ -76,7 +76,7 @@ module.exports = {
     // defer/reply/update internally, so no defer needed here.
     if (await support.handleButton(interaction)) return;
 
-    // ── EA LINK ─────────────────────────────────────────────────────────────
+    // ── EA LINK ──────────────────────────────────────────────────────────[...]
     if (customId.startsWith("ea_link_")) {
       // FIX: defer before the roles.cache check (cheap, but keeps pattern consistent)
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -89,7 +89,7 @@ module.exports = {
       return interaction.editReply({ content: `🔗 **Early Access Link:** ${link}` });
     }
 
-    // ── SESSION LINK ─────────────────────────────────────────────────────────
+    // ── SESSION LINK ────────────────────────────────────────────────────────[...]
     if (customId.startsWith("session_link_")) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const link = getLink(customId.replace("session_link_", ""));
@@ -97,7 +97,7 @@ module.exports = {
       return interaction.editReply({ content: `🔗 **Session Link:** ${link}` });
     }
 
-    // ── REINVITE LINK ────────────────────────────────────────────────────────
+    // ── REINVITE LINK ───────────────────────────────────────────────────────[...]
     if (customId.startsWith("reinvite_link_")) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const link = getLink(customId.replace("reinvite_link_", ""));
@@ -105,12 +105,15 @@ module.exports = {
       return interaction.editReply({ content: `🔗 **New Session Link:** ${link}` });
     }
 
-    // ── GIVEAWAY JOIN ─────────────────────────────────────────────────────────
+    // ── GIVEAWAY JOIN ───────────────────────────────────────────────────────[...]
     if (customId.startsWith("giveaway_join_")) {
+      // FIX: defer before any async work to prevent [10062] Unknown interaction
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
       const id   = customId.replace("giveaway_join_", "");
       const data = giveaway.activeGiveaways.get(id);
       if (!data) {
-        return interaction.reply({ content: "❌ This giveaway is no longer active.", flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ content: "❌ This giveaway is no longer active." });
       }
 
       const alreadyEntered = data.entries.has(interaction.user.id);
@@ -138,11 +141,10 @@ module.exports = {
         });
       } catch { /* message may have been deleted */ }
 
-      return interaction.reply({
+      return interaction.editReply({
         content: alreadyEntered
           ? "✅ You have **left** the giveaway."
           : "✅ You have **entered** the giveaway! Good luck 🎉",
-        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -287,7 +289,7 @@ module.exports = {
   },
 };
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// ── HELPERS ───────────────────────────────────────────────────────────[...]
 
 function chunkArray(arr, size) {
   const result = [];
