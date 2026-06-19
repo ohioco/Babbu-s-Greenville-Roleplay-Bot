@@ -27,7 +27,7 @@ client.sessionHC = null;
 client.reinviteLink = null;
 client.reinviteReleased = false;
 
-// ── LOAD COMMANDS ────────────────────────────────────────────────────────────
+// ── LOAD COMMANDS ─────────────────────────────────────────────────────────
 console.log("[Loader] Starting command load...");
 try {
   const commandFiles = fs
@@ -56,7 +56,7 @@ try {
   process.exit(1);
 }
 
-// ── LOAD EVENTS ──────────────────────────────────────────────────────────────
+// ── LOAD EVENTS ──────────────────────────────────────────────────────────
 console.log("[Loader] Starting event load...");
 try {
   const eventFiles = fs
@@ -128,12 +128,14 @@ try {
 
 client.once("clientReady", () => {
   console.log(`🚔 Babbu's Greenville Roleplay Online — ${client.user.tag}`);
-  client.user
-    .setPresence({
+  try {
+    client.user.setPresence({
       activities: [],
       status: "online",
-    })
-    .catch((err) => console.error("[Ready] Failed to set presence:", err));
+    });
+  } catch (err) {
+    console.error("[Ready] Failed to set presence:", err);
+  }
 });
 
 client.on("error", (err) => {
