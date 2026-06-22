@@ -131,7 +131,7 @@ client.once("clientReady", () => {
   try {
     client.user.setPresence({
       activities: [],
-      status: "online",
+      status: "dnd",
     });
   } catch (err) {
     console.error("[Ready] Failed to set presence:", err);
