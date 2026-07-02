@@ -64,7 +64,7 @@ module.exports = {
       .setTitle("Babbu's Greenville Roleplay™ | Session Released ⭐")
       .setColor(BABY_BLUE)
       .setDescription(
-`<@&1508054312075526204>
+`<@&1455636888680665199>
 
 ➜ The host, **${host}**, has now released their session! Upon joining the session, please spawn your vehicles & park within the marked bays, and wait for further instructions from the host.${coHostLine}
 
