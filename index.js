@@ -90,41 +90,6 @@ try {
 }
 
 // ── LOAD EMBEDS (message commands) ───────────────────────────────────────────
-console.log("[Loader] Starting embed load...");
-try {
-  const embedFiles = fs
-    .readdirSync("./embeds")
-    .filter((f) => f.endsWith(".js"));
-
-  if (embedFiles.length === 0) {
-    console.log("[Loader] ℹ️  No embed files found (optional)\n");
-  } else {
-    for (const file of embedFiles) {
-      try {
-        const event = require(`./embeds/${file}`);
-
-        // Validate embed structure
-        if (!event || !event.name || !event.execute) {
-          console.warn(`⚠️  Embed ${file} is missing required fields (name, execute)`);
-          continue;
-        }
-
-        if (event.once) {
-          client.once(event.name, (...args) => event.execute(...args, client));
-        } else {
-          client.on(event.name, (...args) => event.execute(...args, client));
-        }
-        console.log(`  ✅ Embed: ${event.name}`);
-      } catch (err) {
-        console.error(`  ❌ Failed to load embed ${file}:`, err.message);
-      }
-    }
-    console.log(`[Loader] ✅ Loaded embeds\n`);
-  }
-} catch (err) {
-  console.error("[Loader] ❌ Critical error loading embeds:", err);
-  process.exit(1);
-}
 
 client.once("clientReady", () => {
   console.log(`🚔 Babbu's Greenville Roleplay Online — ${client.user.tag}`);
