@@ -30,7 +30,7 @@ module.exports = {
       .setTitle("Babbu's Greenville Roleplay™ | Session Startup")
       .setColor(BABY_BLUE)
       .setDescription(
-`<@&1508054312075526204>
+`<@&1455636888680665199>
 
 ➜ **${interaction.user}** is now hosting a roleplay session! Prior to joining, please ensure your vehicle has been properly registered using \`/vehicle register\` before participating in the session.
 
